@@ -22,11 +22,14 @@ from keras.callbacks import ModelCheckpoint
 from Attention import Attention_Layer
 from Multimodel_layer import Multimodel_Layer
 
+import sys
+sys.path.insert(0,'/mnt/data/Proposals/Activity_proposals/sparseprop/sparseprop') #This path contains the C3D feature reading code
+from feature import C3D
+
 
 # In[2]:
 
 class Caption_Generator:
-    
     def __init__(self):
         self.captions = []
         self.captions_in_each_video = []
@@ -36,18 +39,36 @@ class Caption_Generator:
         self.vocabulary_size = 0
         self.batch_size = 25
         self.embedding_output_shape = 512
+        self.json_file = "Data/train.json"
+        self.feature_file = '/mnt/data/c3d_features/feature.c3d.hdf5' #feature file is loaded for gere
+        self.num_frames_out = 100 #number of frames per video on output feature pool
+        self.num_features = 500 #number of features per frame 
+        self.additional_save_path = "Data" # new data like processed features will be saved here
         
-    ################################################################################################
+        
+################################################################################################
     def read_data(self, n_batch):
-        print "loading Data for new Batch... "
-        files = [] 
+        print("loading Data for new Batch... ")
+        ##files = [] 
     
         #reading captions
-        with open('MLDS_HW2/MLDS_hw2_data/training_label.json') as data_file:
-            training_labels = json.load(data_file)
-        
+        #with open('MLDS_HW2/MLDS_hw2_data/training_label.json') as data_file:
+        #    training_labels = json.load(data_file)
+        with open(self.json_file) as data_file:
+             training_labels = json.load(data_file)
         
         self.captions_in_each_video = []
+        for i in n_batch:
+            try:
+                for j in range(len(training_labels[i]['sentences'])):
+                    training_labels[i]['sentences'][j] = "<s> "+training_labels[i]['sentences'][j]+" <e>" 
+                    self.captions.append(training_labels[i]['sentences'][j].lower().split(' '))
+                self.captions_in_each_video.append(len(training_labels[i]['sentences']))
+            except:
+                print("Error Caption: %s"%i)
+                continue
+
+        '''
         for i in n_batch:
             files.append(training_labels[i]['id'])
             for j in range(len(training_labels[i]['caption'])):
@@ -55,24 +76,44 @@ class Caption_Generator:
                 self.captions.append(training_labels[i]['caption'][j].lower().split(' '))
             self.captions_in_each_video.append(len(training_labels[i]['caption']))
 
-        
+        '''
         #reading video features
-        video_features = np.zeros((len(files),80,4096))
+        #video_features = np.zeros((len(files),80,4096))
+        ##video_features = np.zeros((len(files),100,500))
         
-        video_features[0] = np.load("MLDS_HW2/MLDS_hw2_data/training_data/feat/"+files[0]+".npy")
+        ##video_features[0] = np.load("MLDS_HW2/MLDS_hw2_data/training_data/feat/"+files[0]+".npy")
 
-        for i in range(1,len(files)):
-            video_features[i] = np.load("MLDS_HW2/MLDS_hw2_data/training_data/feat/"+files[i]+".npy")
+        ##for i in range(1,len(files)):
+            ##video_features[i] = np.load("MLDS_HW2/MLDS_hw2_data/training_data/feat/"+files[i]+".npy")
         
-        print "Data Loaded Successfully....."
+        print("Data Loaded Successfully.....")
+        #return 0
+        ##return video_features
+        vid = None
+
+        video_features = np.zeros((len(n_batch),self.frames_out,self.num_features))
+        for i in range(len(n_batch)):
+            obj = C3D(filename=self.feature_file, t_stride=1,t_size=5)
+            obj.open_instance()
+            video = obj.read_feat(n_batch[i])
+
+            m,n = video.shape
+            if(m>=self.num_frames_out):
+                video_features[i] = video[:self.num_frames_out,:]
+            else:
+                #video_features.fill(0)
+                video_features[i,:m,:] = video
+                video_features[i,m:,:].fill(0)
+            obj.close_instance()
+        np.save("%s/processed_features.pkl"%self.additional_save_path, video_features, allow_pickle=True)
 
         return video_features
-    ################################################################################################
+################################################################################################
     def create_vocabulary(self):
 
-        print "creating vocabulary..."
+        print("creating vocabulary...")
         labels = []
-        with open('MLDS_HW2/MLDS_hw2_data/training_label.json') as data_file:
+        with open(self.json_file) as data_file:
             training_labels = json.load(data_file)
         
         for i in range(len(training_labels)):
@@ -96,11 +137,12 @@ class Caption_Generator:
         self.vocabulary_size = len(self.word2id)
     
        
-            
+
     ################################################################################################
     def transform_inputs(self, video_features):
         #transforming the no of samples of video features equal to no of samples of captions
-        new_features = np.zeros((len(self.captions), 80, 4096))
+        #new_features = np.zeros((len(self.captions), 80, 4096))
+        new_features = np.zeros((len(self.captions), 100, 500))
         for i in range(len(self.captions_in_each_video)):
             for j in range(self.captions_in_each_video[i]):
                 new_features[j] = video_features[i]
@@ -207,7 +249,7 @@ class Caption_Generator:
         batches = np.arange(1450)
         #########################training model##################################
         for epoch in range(10):
-            print "\n\n\nEpoch : ",epoch+1
+            print("\n\n\nEpoch : ",epoch+1)
             np.random.shuffle(batches)
             batch = 0
             for iteration in range(1450/self.batch_size):
@@ -225,7 +267,7 @@ class Caption_Generator:
                 checkpoint = ModelCheckpoint(filepath, monitor='loss', verbose=1, save_best_only=True, mode='min')
                 callbacks_list = [checkpoint]
 
-                print"\n\n###########Training the model on epoch : ", epoch+1, " batch : ", iteration+1 ," ###########\n\n"
+                print("\n\n###########Training the model on epoch : ", epoch+1, " batch : ", iteration+1 ," ###########\n\n")
                 model.fit(x = [embedded_input,video_features], y = label_tensor, batch_size = 256, epochs= 5, callbacks = callbacks_list)
             self.save_model(model,epoch)
             
@@ -255,7 +297,10 @@ class Caption_Generator:
 
         print("word : ",self.id2word[0])
         test_captions = []
-        with open('MLDS_HW2/MLDS_hw2_data/testing_public_label.json') as data_file:
+        #with open('MLDS_HW2/MLDS_hw2_data/testing_public_label.json') as data_file:
+        #    testing_labels = json.load(data_file)
+        
+        with open(json_file) as data_file:
             testing_labels = json.load(data_file)
         
         files = []
@@ -272,19 +317,22 @@ class Caption_Generator:
 
         print("number of files : ",len(files))
         #reading video features
-        video_features = np.zeros((len(files),80,4096))
+        #video_features = np.zeros((len(files),80,4096))
+        video_features = np.zeros((len(files),100,500))
         
         print("shape : ",np.load("MLDS_HW2/MLDS_hw2_data/testing_data/feat/"+files[0]+".npy").shape)
 
         for i in range(len(files)):
             video_features[i] = np.load("MLDS_HW2/MLDS_hw2_data/testing_data/feat/"+files[i]+".npy")
 
-        new_features = np.zeros((len(self.captions), 80, 4096))
+        #new_features = np.zeros((len(self.captions), 80, 4096))
+        new_features = np.zeros((len(self.captions), 100, 500))
         for i in range(len(self.captions_in_each_video)):
             for j in range(self.captions_in_each_video[i]):
                 new_features[j] = video_features[i]
         
-        new_features = np.reshape(new_features, (len(self.captions)*80, 1, 4096))
+        #new_features = np.reshape(new_features, (len(self.captions)*80, 1, 4096))
+        new_features = np.reshape(new_features, (len(self.captions)*100, 1, 500))
         
 
         #print("new_features : ", new_features.shape)
@@ -299,7 +347,7 @@ class Caption_Generator:
         model = self.load_model(model)
 
         output = model.predict([embedded_input[:200,:,:], new_features[:200,:,:]])
-        
+        '''
         with open("Model_Results/Results/generated_text_epoch"+str(epoch)+".txt", "a") as fileHandler:
             
             for i in range(200):
@@ -311,7 +359,7 @@ class Caption_Generator:
                 fileHandler.write("Generated text for example ",i," : ", text)
                 fileHandler.write("\n")
             fileHandler.close()    
-            
+         
 
     ################################################################################################
 
@@ -335,4 +383,4 @@ model = caption_generator.train()
 # In[ ]:
 
 
-
+'''
