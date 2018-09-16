@@ -30,7 +30,7 @@ from feature import C3D
 # In[2]:
 
 class Caption_Generator:
-    def __init__(self):
+    def __init__(self,n_batch):
         self.captions = []
         self.captions_in_each_video = []
         self.word2id = {}
@@ -44,10 +44,11 @@ class Caption_Generator:
         self.num_frames_out = 100 #number of frames per video on output feature pool
         self.num_features = 500 #number of features per frame 
         self.additional_save_path = "Data" # new data like processed features will be saved here
+        self.n_batch = n_batch #video ids in caption dataset dictionary. Given as a list
         
         
 ################################################################################################
-    def read_data(self, n_batch):
+    def read_data(self, n_batch): #n_batch is as same as self.vid_ids of mine
         print("loading Data for new Batch... ")
         ##files = [] 
     
@@ -115,14 +116,15 @@ class Caption_Generator:
         labels = []
         with open(self.json_file) as data_file:
             training_labels = json.load(data_file)
-        
-        for i in range(len(training_labels)):
-            for j in range(len(training_labels[i]['caption'])):
-                training_labels[i]['caption'][j] = "<s> "+training_labels[i]['caption'][j]+" <e>" 
-                labels.append(training_labels[i]['caption'][j].lower().split(' '))
-        
+        for i in self.n_batch:
+            try:
+                for j in range(len(training_labels[i]['sentences'])):
+                    training_labels[i]['sentences'][j] = "<s> "+training_labels[i]['sentences'][j]+" <e>" 
+                    labels.append(training_labels[i]['sentences'][j].lower().split(' '))
+            except KeyError:
+                print("\tKey Error:%s"%i)
         self.max_sentence_length = 1 + max([len(caption) for caption in labels])
-        print("\t Max sentence length : ", self.max_sentence_length)
+        print("Max sentence length : ", self.max_sentence_length)
          
         #computing char2id and id2char vocabulary
         index = 0
@@ -142,7 +144,7 @@ class Caption_Generator:
     def transform_inputs(self, video_features):
         #transforming the no of samples of video features equal to no of samples of captions
         #new_features = np.zeros((len(self.captions), 80, 4096))
-        new_features = np.zeros((len(self.captions), 100, 500))
+        new_features = np.zeros((len(self.captions), self.frames_out, self.num_features))
         for i in range(len(self.captions_in_each_video)):
             for j in range(self.captions_in_each_video[i]):
                 new_features[j] = video_features[i]
