@@ -12,27 +12,27 @@ class Attention_Layer(Layer):
 		super(Attention_Layer, self).__init__(**kwargs)
 
 	def build(self, input_shape):
-		self.W = self.add_weight(shape=(4096, self.output_dim), initializer = 'uniform', trainable = True)
+		self.W = self.add_weight(name='kernel1',shape=(500, self.output_dim), initializer = 'uniform', trainable = True)
 
-		self.U = self.add_weight(shape=(512, self.output_dim), initializer = 'uniform', trainable = True)
+		self.U = self.add_weight(name='kernel2',shape=(512, self.output_dim), initializer = 'uniform', trainable = True)
 
-		self.b = self.add_weight(shape=(self.output_dim,), initializer = 'uniform', trainable = True)
+		self.b = self.add_weight(name='kernel3',shape=(self.output_dim,), initializer = 'uniform', trainable = True)
 
-		self.w = self.add_weight(shape=(self.output_dim, 4096), initializer = 'uniform', trainable = True)
+		self.w = self.add_weight(name='kernel4',shape=(self.output_dim, 500), initializer = 'uniform', trainable = True)
 
 	def call(self, inputs, mask=None):
 
-		print "\n\tAttention_Layer...."
+		print("\n\tAttention_Layer....")
 		if len(inputs) <=1:
 			print("got none input to attention layer....")
 
 		h = inputs[0]
 		v = inputs[1]
 				
-		print "h : ",k.int_shape(h)
-		print "v : ",k.int_shape(v)
-		print "W : ",k.int_shape(self.W)
-		print "U : ",k.int_shape(self.U)
+		print("h : ",k.int_shape(h))
+		print("v : ",k.int_shape(v)) 
+		print("W : ",k.int_shape(self.W))
+		print("U : ",k.int_shape(self.U))
 		
 		####################Attention Layer I#############################
 		U_h = k.dot(h,self.U)
@@ -41,23 +41,23 @@ class Attention_Layer(Layer):
 		U_h = k.reshape(U_h,(-1, k.int_shape(U_h)[1], 1, k.int_shape(U_h)[2]))
 		W_v = k.reshape(W_v,(-1, 1, k.int_shape(W_v)[1], k.int_shape(W_v)[2]))
 
-		print "U_h : ",k.int_shape(U_h)
-		print "W_v : ",k.int_shape(W_v)
+		print("U_h : ",k.int_shape(U_h))
+		print("W_v : ",k.int_shape(W_v))
 
 
 		f = k.tanh(W_v + U_h + self.b) 
 		
-		print "f : ",k.int_shape(f)
+		print("f : ",k.int_shape(f))
 		
 		####################Attention Layer II############################
 		q = k.dot(f,self.w)
-		print "q : ",k.int_shape(q)
+		print("q : ",k.int_shape(q))
 
 		
 		####################Sequential Softmax Layer######################
 		
 		beta = k.exp(q)/k.sum(k.exp(q), axis=0)
-		print "beta : ",k.int_shape(beta) 
+		print("beta : ",k.int_shape(beta) )
 		
 		####################Weighted Averaging Layer######################
 		
@@ -67,7 +67,7 @@ class Attention_Layer(Layer):
 		u = k.sum(u, axis=0)
 		self.u = tf.transpose(u, [2,1,0])
 
-		print "u : ",k.int_shape(self.u)
+		print("u : ",k.int_shape(self.u))
 
 		return self.u
 

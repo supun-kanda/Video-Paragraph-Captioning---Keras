@@ -12,16 +12,16 @@ class Multimodel_Layer(Layer):
 		super(Multimodel_Layer, self).__init__(**kwargs)
 
 	def build(self, input_shape):
-		self.W = self.add_weight(shape=(4096, self.output_dim), initializer = 'uniform', trainable = True)
+		self.W = self.add_weight(name='kernel1',shape=(500, self.output_dim), initializer = 'uniform', trainable = True)
 
-		self.U = self.add_weight(shape=(512, self.output_dim), initializer = 'uniform', trainable = True)
+		self.U = self.add_weight(name='kernel2',shape=(512, self.output_dim), initializer = 'uniform', trainable = True)
 
-		self.b = self.add_weight(shape=(self.output_dim,), initializer = 'uniform', trainable = True)
+		self.b = self.add_weight(name='kernel3',shape=(self.output_dim,), initializer = 'uniform', trainable = True)
 
 	def call(self, inputs, mask=None):
 
 		if len(inputs) <=1:
-			print "got none input to attention layer...."
+			print("got none input to attention layer....")
 
 		h = inputs[0]
 		v = inputs[1]
