@@ -45,10 +45,11 @@ class Caption_Generator:
         self.csv_file = "Data/labels_dense.csv" #frame information csv since the json is from time
         self.pkl_file = "Data/no_keys.pkl"
         self.feature_file = '/mnt/data/c3d_features/feature.c3d.hdf5' #feature file is loaded for gere
-        self.num_frames_out = 100 #number of frames per video on output feature pool
+        self.num_frames_out = 200 #number of frames per video on output feature pool
         self.num_features = 500 #number of features per frame 
         self.additional_save_path = "Data" # new data like processed features will be saved here
         self.vid_ids = vid_ids #video ids in caption dataset dictionary. Given as a list
+        self.training_labels = []
         
         #######################################
         if(os.path.exists(self.pkl_file)):
@@ -90,6 +91,19 @@ class Caption_Generator:
         
         return no_keys
 ################################################################################################
+    def video_features(filename, init, num_feats, total_feats):
+        obj = C3D(filename=self.feature_file, t_stride=1,t_size=1)
+        obj.open_instance()
+        video = obj.read_feat(video_name=filename)
+        m = video.shape[0]
+        ratio = 1.0*m/total_feats
+        init_n = int(ratio*init)
+        nums_n = int(ratio*num_feats)
+        features = obj.read_feat(video_name=filename, f_init=init_n, duration=nums_n)
+        obj.close_instance()
+        return features
+        
+################################################################################################
     def read_data(self,n_batch): 
         print("loading Data for new Batch... ")
         ##files = [] 
@@ -99,34 +113,8 @@ class Caption_Generator:
         #    training_labels = json.load(data_file)
         with open(self.json_file) as data_file:
              training_labels = json.load(data_file)
-        self.captions_in_each_video = []
-        n_frames = 0
-        count = 0
-        with open(self.csv_file) as csvfile:
-            captions = csv.reader(csvfile, delimiter=',')
-            stat = 1
-            for row in captions:
-                if(stat):
-                    stat = 0
-                else:
-                    sentence = row[4]
-                    vid_id = row[0]
-                    n_frames += int(row[2])
-                    count += 1
-                    video_features = np.zeros((len(n_batch),self.num_frames_out,self.num_features))
-                    obj = C3D(filename=self.feature_file, t_stride=1,t_size=2)
-                    obj.open_instance()
-                    video = obj.read_feat(video_name=vid_id)
-                    m,n = video.shape
-                    #if(m>=self.num_frames_out):
-                    #    video_features[i] = video[:self.num_frames_out,:]
-                    #else:
-                    #    video_features[i,:m,:] = video
-                    #    video_features[i,m:,:].fill(0)
-                    obj.close_instance()
-        print(n_frames/count)
-        
-        
+        self.captions_in_each_video = []  
+
         for i in n_batch:
             try:
                 for j in range(len(training_labels[self.vid_ids[i]]['sentences'])):
@@ -138,23 +126,22 @@ class Caption_Generator:
                 print("\tError Caption: %s"%self.vid_ids[i])
         
         #reading video features
-        ##return video_features
+        
         video_features = np.zeros((len(n_batch),self.num_frames_out,self.num_features))
         for i in range(len(n_batch)):
-            obj = C3D(filename=self.feature_file, t_stride=1,t_size=2)
+            obj = C3D(filename=self.feature_file, t_stride=1,t_size=5)
             obj.open_instance()
-            video = obj.read_feat(video_name=self.vid_ids[n_batch[i]], f_init=0, duration=0,return_reshaped=True)
+            video = obj.read_feat(video_name=self.vid_ids[n_batch[i]])
             m,n = video.shape
-            print("%s:%dx%d"%(self.vid_ids[n_batch[i]],m,n))
+            #print("%s:%dx%d"%(self.vid_ids[n_batch[i]],m,n))
             if(m>=self.num_frames_out):
                 video_features[i] = video[:self.num_frames_out,:]
             else:
-                #video_features.fill(0)
                 video_features[i,:m,:] = video
                 video_features[i,m:,:].fill(0)
             obj.close_instance()
         #np.save("%s/processed_features"%self.additional_save_path, video_features, allow_pickle=True)
-
+        ##return video_features
         return video_features
 ####################################################################################################
     def create_vocabulary(self):
@@ -323,12 +310,13 @@ class Caption_Generator:
                 model.fit(x = [embedded_input,video_features], y = label_tensor, batch_size = 256, epochs= 5, callbacks = callbacks_list)
             #self.save_model(model,epoch)
          '''
-        video_features, embedded_input, label_tensor = self.data_preprocessing(np.arange(1450));
+        video_features, embedded_input, label_tensor = self.data_preprocessing(np.arange(600));
         model = self.build_model(video_features, embedded_input)
         filepath="Data/model_results/word-weights-improvement-{epoch:02d}-{loss:.4f}.hdf5"
         checkpoint = ModelCheckpoint(filepath, monitor='loss', verbose=1, save_best_only=True, mode='min')
         callbacks_list = [checkpoint]
         model.fit(x = [embedded_input,video_features], y = label_tensor, batch_size = 10, epochs= 5, callbacks = callbacks_list)
+        self.save_model(model,5)
         return model
     
     ################################################################################################    
@@ -344,7 +332,7 @@ class Caption_Generator:
     ################################################################################################    
     def load_model(self, model, epoch):
         # load weights into new model
-        filename = "Sentence_Generator_Model_Results/model_epoch_"+str(epoch)+".h5"
+        filename = "Data/model_results/model_epoch_"+str(epoch)+".h5"
         model.load_weights(filename)
         print("Loaded model from disk")
         return model
@@ -357,8 +345,8 @@ class Caption_Generator:
         #with open('MLDS_HW2/MLDS_hw2_data/testing_public_label.json') as data_file:
         #    testing_labels = json.load(data_file)
         
-        with open(json_file) as data_file:
-            testing_labels = json.load(data_file)
+        #with open(json_file) as data_file:
+        #    testing_labels = json.load(data_file)
         
         files = []
         self.captions_in_each_video = []
