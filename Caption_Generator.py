@@ -116,7 +116,7 @@ class Caption_Generator:
                     video_features = np.zeros((len(n_batch),self.num_frames_out,self.num_features))
                     obj = C3D(filename=self.feature_file, t_stride=1,t_size=2)
                     obj.open_instance()
-                    video = obj.read_feat(video_name=vid_id, f_init=0, duration=0,return_reshaped=True)
+                    video = obj.read_feat(video_name=vid_id)
                     m,n = video.shape
                     #if(m>=self.num_frames_out):
                     #    video_features[i] = video[:self.num_frames_out,:]
