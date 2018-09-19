@@ -42,19 +42,30 @@ class Caption_Generator:
         self.batch_size = 10
         self.embedding_output_shape = 512
         self.json_file = "Data/train.json"
-        self.csv_file = "Data/labels_dense.csv"
+        self.csv_file = "Data/labels_dense.csv" #frame information csv since the json is from time
+        self.pkl_file = "Data/no_keys.pkl"
         self.feature_file = '/mnt/data/c3d_features/feature.c3d.hdf5' #feature file is loaded for gere
         self.num_frames_out = 100 #number of frames per video on output feature pool
         self.num_features = 500 #number of features per frame 
         self.additional_save_path = "Data" # new data like processed features will be saved here
         self.vid_ids = vid_ids #video ids in caption dataset dictionary. Given as a list
         
+        #######################################
+        if(os.path.exists(self.pkl_file)):
+            with open(self.pkl_file,'rb') as f:
+                removing_set = pickle.load(f)
+        else:
+            removing_set = self.save_no_keys()
+        for e in removing_set:
+            self.vid_ids.remove(e)
+        print("vid_ids verified")
+        #######################################
         
 ################################################################################################
-    def save_no_keys(self):
+    def save_no_keys(self):#Which creates a list of ids which is only presented in id file_ not in csv file
         no_keys = []
         cap_labs = []
-        with open('Data/labels_dense.csv') as csvfile:
+        with open(self.csv_file) as csvfile:
             captions = csv.reader(csvfile, delimiter=',')
             stat = 1
             for row in captions:
@@ -74,8 +85,10 @@ class Caption_Generator:
                 print(key,"2")
                 no_keys.append(key)
 
-        with open('Data/no_keys.pkl', 'wb') as f:
+        with open(self.pkl_file, 'wb') as f:
             pickle.dump(no_keys, f)
+        
+        return no_keys
 ################################################################################################
     def read_data(self,n_batch): 
         print("loading Data for new Batch... ")
@@ -87,7 +100,33 @@ class Caption_Generator:
         with open(self.json_file) as data_file:
              training_labels = json.load(data_file)
         self.captions_in_each_video = []
-        remove_later = []
+        n_frames = 0
+        count = 0
+        with open(self.csv_file) as csvfile:
+            captions = csv.reader(csvfile, delimiter=',')
+            stat = 1
+            for row in captions:
+                if(stat):
+                    stat = 0
+                else:
+                    sentence = row[4]
+                    vid_id = row[0]
+                    n_frames += int(row[2])
+                    count += 1
+                    video_features = np.zeros((len(n_batch),self.num_frames_out,self.num_features))
+                    obj = C3D(filename=self.feature_file, t_stride=1,t_size=2)
+                    obj.open_instance()
+                    video = obj.read_feat(video_name=vid_id, f_init=0, duration=0,return_reshaped=True)
+                    m,n = video.shape
+                    #if(m>=self.num_frames_out):
+                    #    video_features[i] = video[:self.num_frames_out,:]
+                    #else:
+                    #    video_features[i,:m,:] = video
+                    #    video_features[i,m:,:].fill(0)
+                    obj.close_instance()
+        print(n_frames/count)
+        
+        
         for i in n_batch:
             try:
                 for j in range(len(training_labels[self.vid_ids[i]]['sentences'])):
@@ -97,10 +136,6 @@ class Caption_Generator:
                 self.captions_in_each_video.append(len(training_labels[self.vid_ids[i]]['sentences']))
             except KeyError:
                 print("\tError Caption: %s"%self.vid_ids[i])
-                remove_later.append(self.vid_ids[i])
-
-        #[self.vid_ids.remove(i) for i in remove_later] # remove key values which are not in captions
-        
         
         #reading video features
         ##return video_features
@@ -108,7 +143,7 @@ class Caption_Generator:
         for i in range(len(n_batch)):
             obj = C3D(filename=self.feature_file, t_stride=1,t_size=2)
             obj.open_instance()
-            video = obj.read_feat(self.vid_ids[n_batch[i]])
+            video = obj.read_feat(video_name=self.vid_ids[n_batch[i]], f_init=0, duration=0,return_reshaped=True)
             m,n = video.shape
             print("%s:%dx%d"%(self.vid_ids[n_batch[i]],m,n))
             if(m>=self.num_frames_out):
