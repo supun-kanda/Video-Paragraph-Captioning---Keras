@@ -77,9 +77,9 @@ class Caption_Generator:
         cap_labs = list(set(cap_labs))
                 
         with open(self.json_file) as data_file:
-             training_labels = json.load(data_file)
+             self.training_labels = json.load(data_file)
         for key in self.vid_ids:
-            if(key not in training_labels):
+            if(key not in self.training_labels):
                 print(key,"1")
                 no_keys.append(key)
             elif(key not in cap_labs):
@@ -110,18 +110,18 @@ class Caption_Generator:
     
         #reading captions
         #with open('MLDS_HW2/MLDS_hw2_data/training_label.json') as data_file:
-        #    training_labels = json.load(data_file)
+        #    self.training_labels = json.load(data_file)
         with open(self.json_file) as data_file:
-             training_labels = json.load(data_file)
+             self.training_labels = json.load(data_file)
         self.captions_in_each_video = []  
 
         for i in n_batch:
             try:
-                for j in range(len(training_labels[self.vid_ids[i]]['sentences'])):
+                for j in range(len(self.training_labels[self.vid_ids[i]]['sentences'])):
                     ######training_labels[i]['caption'][j]#####
-                    training_labels[self.vid_ids[i]]['sentences'][j] = "<s> "+training_labels[self.vid_ids[i]]['sentences'][j]+" <e>"
-                    self.captions.append(training_labels[self.vid_ids[i]]['sentences'][j].lower().split(' '))
-                self.captions_in_each_video.append(len(training_labels[self.vid_ids[i]]['sentences']))
+                    self.training_labels[self.vid_ids[i]]['sentences'][j] = "<s> "+self.training_labels[self.vid_ids[i]]['sentences'][j]+" <e>"
+                    self.captions.append(self.training_labels[self.vid_ids[i]]['sentences'][j].lower().split(' '))
+                self.captions_in_each_video.append(len(self.training_labels[self.vid_ids[i]]['sentences']))
             except KeyError:
                 print("\tError Caption: %s"%self.vid_ids[i])
         
@@ -149,12 +149,12 @@ class Caption_Generator:
         print("creating vocabulary...")
         labels = []
         with open(self.json_file) as data_file:
-            training_labels = json.load(data_file)
+            self.training_labels = json.load(data_file)
         for i in self.vid_ids:
             try:
-                for j in range(len(training_labels[i]['sentences'])):
-                    training_labels[i]['sentences'][j] = "<s> "+training_labels[i]['sentences'][j]+" <e>" 
-                    labels.append(training_labels[i]['sentences'][j].lower().split(' '))
+                for j in range(len(self.training_labels[i]['sentences'])):
+                    self.training_labels[i]['sentences'][j] = "<s> "+self.training_labels[i]['sentences'][j]+" <e>" 
+                    labels.append(self.training_labels[i]['sentences'][j].lower().split(' '))
             except KeyError:
                 print("\tKey Error:%s"%i)
         self.max_sentence_length = 1 + max([len(caption) for caption in labels])
