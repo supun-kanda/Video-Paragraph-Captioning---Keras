@@ -2,7 +2,6 @@
 # coding: utf-8
 
 # In[1]:
-
 import tensorflow as tf
 import numpy as np
 import json
@@ -24,16 +23,13 @@ from keras.callbacks import History
 
 from Attention import Attention_Layer
 from Multimodel_layer import Multimodel_Layer
-
-import sys
-sys.path.insert(0,'/mnt/data/Proposals/Activity_proposals/sparseprop/sparseprop') #This path contains the C3D feature reading code
-from feature import C3D
+from Utilities import Utilities
 
 
 # In[2]:
 
-class Caption_Generator:
-    def __init__(self,vid_ids,training_labels,train_epochs):
+class Caption_Generator(Utilities):
+    def __init__(self,vid_ids,training_labels,train_epochs):#constructor
         self.captions = []
         self.captions_in_each_video = []
         self.word2id = {}
@@ -43,8 +39,6 @@ class Caption_Generator:
         self.batch_size = 10
         self.embedding_output_shape = 512
         self.json_file = "Data/train.json"
-        #self.csv_file = "Data/labels_dense.csv" #frame information csv since the json is from time
-        #self.csv_id_file = "Data/labels_dic.pkl" #ids of csv file
         self.csv_file = 'Data/labels_compact.csv'
         self.pkl_file = "Data/ids_no_keys.pkl" # include id dictionary to row index  of csv file and keys not in csv but in json file
         self.dic_file = "Data/dic_file.pkl" #included id2word max_sentence_length vocabulary_size dictionaries
@@ -65,74 +59,21 @@ class Caption_Generator:
                 self.frame_dic = ids_no_keys['frame_dic']
         else:
             removing_set, self.frame_dic = self.save_no_keys()
-            print("Creating pickle for csv dic and ids not existed")
+            print("Creating pikle for csv dic and ids not existed")
         for e in removing_set:
             self.vid_ids.remove(e)
         print("vid_ids verified")
         #######################################
         
-################################################################################################
-    def save_no_keys(self):#Which creates a list of ids which is only presented in id file not in csv file
-        no_keys = []
-        cap_labs = []
-        frame_dic = {}
-        save_data = {}
-        with open(self.csv_file) as csvfile:
-            captions = csv.reader(csvfile, delimiter=',')
-            stat = 1
-            for row in captions:
-                if(stat):
-                    stat = 0
-                else:
-                    cap_labs.append(row[0])
-                    frame_dic[row[0]] = [int(row[1]), int(row[2]), int(row[3])] 
-        cap_labs = list(set(cap_labs))
-                
-        for key in self.vid_ids:
-            if(key not in self.training_labels):
-                print(key,"1")
-                no_keys.append(key)
-            elif(key not in cap_labs):
-                print(key,"2")
-                no_keys.append(key)
-        
-        save_data['no_keys'] = no_keys
-        save_data['frame_dic'] = frame_dic
-
-        with open(self.pkl_file, 'wb') as f:
-            pickle.dump(save_data, f)
-        
-        return no_keys, frame_dic
-################################################################################################
-    def extract_video_features(self, file, init, num_frames, vid_frames):
-        obj = C3D(filename=self.feature_file, t_stride=1,t_size=5)
-        obj.open_instance()
-        video = obj.read_feat(video_name=file)
-        m = video.shape[0]
-        ratio = 1.0*m/vid_frames
-        init_n = int(ratio*init)
-        if(num_frames>=vid_frames):
-            nums_n = m - init_n
-        else:
-            nums_n = int(ratio*num_frames)
-        features = obj.read_feat(video_name=file, f_init=init_n, duration=nums_n)
-        obj.close_instance()
-        return features
-        
-################################################################################################
+###############################################################################################
     def read_data(self,n_batch): 
         print("loading Data for new Batch... ")
-        ##files = [] 
-    
-        #reading captions
-        #with open('MLDS_HW2/MLDS_hw2_data/training_label.json') as data_file:
-        #    self.training_labels = json.load(data_file)
+        
         self.captions_in_each_video = []  
 
         for i in n_batch:
             try:
                 for j in range(len(self.training_labels[self.vid_ids[i]]['sentences'])):
-                    ######training_labels[i]['caption'][j]#####
                     self.training_labels[self.vid_ids[i]]['sentences'][j] = "<s> "+self.training_labels[self.vid_ids[i]]['sentences'][j]+" <e>"
                     self.captions.append(self.training_labels[self.vid_ids[i]]['sentences'][j].lower().split(' '))
                 self.captions_in_each_video.append(len(self.training_labels[self.vid_ids[i]]['sentences']))
@@ -143,28 +84,15 @@ class Caption_Generator:
         
         video_features = np.zeros((len(n_batch),self.num_frames_out,self.num_features))
         for i in range(len(n_batch)):
-            #obj = C3D(filename=self.feature_file, t_stride=1,t_size=5)
-            #obj.open_instance()
-            #video = obj.read_feat(video_name=self.vid_ids[n_batch[i]])
-            #m,n = video.shape
-            #print("%s:%dx%d"%(self.vid_ids[n_batch[i]],m,n))
             frame_list = self.frame_dic[self.vid_ids[n_batch[i]]]
             init = frame_list[0]
             num_frames = frame_list[1]
             vid_frames = frame_list[2]
-            video_features = self.extract_video_features(file = self.vid_ids[n_batch[i]], init = init, num_frames = num_frames, vid_frames = vid_frames)
-            break
-            #if(m>=self.num_frames_out):
-            #    video_features[i] = video[:self.num_frames_out,:]
-            #else:
-            #    video_features[i,:m,:] = video
-            #    video_features[i,m:,:].fill(0)
-            #obj.close_instance()
-        #np.save("%s/processed_features"%self.additional_save_path, video_features, allow_pickle=True)
-        ##return video_features
+            video_features[i] = self.extract_video_features(file = self.vid_ids[n_batch[i]], init = init, num_frames = num_frames, vid_frames = vid_frames, frame_limit = 200)
+        print("Done loading Data")
         return video_features
 ####################################################################################################
-    def create_vocabulary(self):
+    def create_vocabulary(self):#dumping a dic
 
         print("creating vocabulary...")
         labels = []
@@ -187,11 +115,13 @@ class Caption_Generator:
                     self.id2word[index] = word
                     index += 1
         self.vocabulary_size = len(self.word2id)
-        save_dic = {'dic':self.id2word, 'max_len':self.max_sentence_length, 'voca':self.vocabulary_size}
-        with open(self.dic_file, 'wb') as f:
-            pickle.dump(save_dic, f)
+        print("Done creating vocabulary")
+        #save_dic = {'dic':self.id2word, 'max_len':self.max_sentence_length, 'voca':self.vocabulary_size}
+        #with open(self.dic_file, 'wb') as f:
+        #    pickle.dump(save_dic, f)
 ################################################################################################
     def transform_inputs(self, video_features):
+        print("Transforming Inputs...")
         #transforming the no of samples of video features equal to no of samples of captions
         #new_features = np.zeros((len(self.captions), 80, 4096))
         new_features = np.zeros((len(self.captions), self.num_frames_out, self.num_features))
@@ -200,9 +130,10 @@ class Caption_Generator:
         last = 0
         for i in range(len(self.captions_in_each_video)):
             num_caps = self.captions_in_each_video[i]
-            for j in range(last,last+num_caps):
+            for j in range(last,last+num_caps-1):
                 new_features[j] = video_features[i]
             last = last+num_caps       
+        print("Done Transforming Inputs...")
         return new_features
             
     
@@ -218,7 +149,7 @@ class Caption_Generator:
                 encoded_tensor[i, j, self.word2id[self.captions[i][j]]] = 1 #convert each vector into to index
                 if j<len(self.captions[i])-1:
                     label_tensor[i,j,self.word2id[self.captions[i][j+1]]] = 1
-                
+        print("Done encoding inputs...")
         return encoded_tensor, label_tensor
     
 ################################################################################################
@@ -234,6 +165,7 @@ class Caption_Generator:
         output_weights = np.asarray(self.embedding_weights[0]).T
         self.embedding_weights[0] = output_weights
         self.embedding_weights[1] = np.ones((self.vocabulary_size,))
+        print("Done embedding inputs....")
         return output_array
     
 ################################################################################################
@@ -241,6 +173,7 @@ class Caption_Generator:
         #########################Preprocessing Data##############################
         #print("Data Preprocessing.......")
         #print("\tReading data.......")
+        print("Data Preprocessing....")
         video_features = self.read_data(n_batch)
         video_features = self.transform_inputs(video_features)
         #print("\tvideo features : ",video_features.shape)
@@ -260,7 +193,7 @@ class Caption_Generator:
         #print("\tEmbedding Weights : ", np.asarray(self.embedding_weights[0]).shape)
 
         #print("\tEmbedded_captions : ",embedded_input.shape)
-        
+        print("Done Data Preprocessing....")
         return video_features, embedded_input, label_tensor
         
     ################################################################################################    
@@ -297,7 +230,7 @@ class Caption_Generator:
         model.compile(loss = 'categorical_crossentropy', optimizer = RMSprop(lr=0.001), metrics=['accuracy'])
 
         model.summary() # Convenient function to see details about the network model.
-
+        print('Done Building...')
         return model
     
     ################################################################################################    
@@ -329,18 +262,17 @@ class Caption_Generator:
                 model.fit(x = [embedded_input,video_features], y = label_tensor, batch_size = 256, epochs= 5, callbacks = callbacks_list)
             #self.save_model(model,epoch)
          '''
+        print('Start Training...')
         video_features, embedded_input, label_tensor = self.data_preprocessing(np.arange(self.size));
         model = self.build_model(video_features, embedded_input)
         filepath="Data/model_results/word-weights-improvement-{epoch:02d}-{loss:.4f}.hdf5"
         checkpoint = ModelCheckpoint(filepath, monitor='loss', verbose=1, save_best_only=True, mode='min')
         callbacks_list = [checkpoint]
-        #history = LossHistory()
-        #callbacks_list.append(history)
         hist = model.fit(x = [embedded_input,video_features], y = label_tensor, validation_split = 0.3, batch_size = 50, epochs= self.train_epochs, callbacks = callbacks_list)
         with open("Data/histfile.pkl", 'wb') as f:
             pickle.dump(hist.history, f)
         self.save_model(model,1)
-        #print(history.history.keys())
+        print('Done Training...')
         return model,hist
     
     ################################################################################################    
