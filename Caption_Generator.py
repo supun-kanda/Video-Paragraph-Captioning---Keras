@@ -48,7 +48,7 @@ class Caption_Generator(Utilities):
         self.additional_save_path = "Data" # new data like processed features will be saved here
         self.vid_ids = vid_ids #video ids in caption dataset dictionary. Given as a list
         self.training_labels = training_labels #training json file
-        self.size = 1500
+        self.size = 200
         self.train_epochs = train_epochs
         
         #######################################
@@ -204,7 +204,6 @@ class Caption_Generator(Utilities):
         input1 = Input(shape=(embedded_input.shape[1],embedded_input.shape[2]), dtype='float32')
         #input2 = Input(shape=(visual_features.shape[0],visual_features.shape[1]), dtype='float32')
         input2 = Input(shape=(video_features.shape[1], video_features.shape[2]), dtype='float32')
-        
         model = Sequential()
         
         layer1 = GRU(512, return_sequences = True, input_shape = (embedded_input.shape[1],embedded_input.shape[2]), activation = 'relu')(input1)
@@ -235,33 +234,6 @@ class Caption_Generator(Utilities):
     
     ################################################################################################    
     def train(self):       
-        '''
-        batches = np.arange(1450)
-        #########################training model##################################
-        for epoch in range(10):
-            print("\n\n\nEpoch : ",epoch+1)
-            np.random.shuffle(batches)
-            batch = 0
-            for iteration in range(int(1450/self.batch_size)):
-                if batch+self.batch_size >= 1450:
-                    n_batch = batches[batch:-1]
-                else:    
-                    n_batch = batches[batch:(batch+self.batch_size)]
-                batch += self.batch_size
-                self.captions = []
-                video_features, embedded_input, label_tensor = self.data_preprocessing(n_batch)
-                if(iteration == 0 and epoch == 0):
-                    #model = caption_generator.build_model(video_features, embedded_input)
-                    model = self.build_model(video_features, embedded_input)
-                # define the checkpoint
-                filepath="Data/model_results/word-weights-improvement-{epoch:02d}-{loss:.4f}.hdf5"
-                checkpoint = ModelCheckpoint(filepath, monitor='loss', verbose=1, save_best_only=True, mode='min')
-                callbacks_list = [checkpoint]
-
-                print("\n\n###########Training the model on epoch : ", epoch+1, " batch : ", iteration+1 ," ###########\n\n")
-                model.fit(x = [embedded_input,video_features], y = label_tensor, batch_size = 256, epochs= 5, callbacks = callbacks_list)
-            #self.save_model(model,epoch)
-         '''
         print('Start Training...')
         video_features, embedded_input, label_tensor = self.data_preprocessing(np.arange(self.size));
         model = self.build_model(video_features, embedded_input)
@@ -297,43 +269,21 @@ class Caption_Generator(Utilities):
     #def test(self, model, epoch):
 ##############################################################################################################################################
     def test(self):   
-        #######################################
-        if(len(self.id2word) and self.max_sentence_length and self.vocabulary_size):
-            print("Use Previous values")
-        else:
-            with open(self.dic_file,'rb') as f:
-                save_dic = pickle.load(f)
-                self.id2word = save_dic['dic']
-                self.max_sentence_length = save_dic['max_len']
-                self.vocabulary_size = save_dic['voca']
-        #######################################
-        #print("word : ",self.id2word[0])
         test_captions = []
         files = []
-        captions_in_each_video = []
+        self.captions_in_each_video = []
         
         for i in range(1500,2000):
             try:
                 files.append(self.vid_ids[i])
                 for j in range(len(self.training_labels[self.vid_ids[i]]['sentences'])):
-                    ######training_labels[i]['caption'][j]#####
                     test_captions.append(self.training_labels[self.vid_ids[i]]['sentences'][j].lower().split(' '))
-                captions_in_each_video.append(j)
+                self.captions_in_each_video.append(j)
             except KeyError:
                 print("\tError Caption: %s"%self.vid_ids[i])
         
         #reading video features
         encoded_tensor = np.zeros((len(test_captions), self.max_sentence_length, self.vocabulary_size), dtype=np.float16)
-        label_tensor = np.zeros((len(test_captions), self.max_sentence_length, self.vocabulary_size), dtype=np.float16)
-        for i in range(len(test_captions)):
-            for j in range(len(test_captions[i])):
-                if(test_captions[i][j] not in self.word2id):
-                    continue
-                else:
-                    print('excaped')
-                encoded_tensor[i, j, self.word2id[test_captions[i][j]]] = 1 #convert each vector into to index
-                if j<len(self.captions[i])-1:
-                    label_tensor[i,j,self.word2id[test_captions[i][j+1]]] = 1
         encoded_tensor[:,0,0] = 1
                 
         print("number of files : ",len(files))
@@ -342,47 +292,26 @@ class Caption_Generator(Utilities):
         
         
         for i in range(len(files)):
-            obj = C3D(filename=self.feature_file, t_stride=1,t_size=5)
-            obj.open_instance()
-            video = obj.read_feat(video_name=files[i])
-            m,n = video.shape
-            #print("%s:%dx%d"%(self.vid_ids[n_batch[i]],m,n))
-            if(m>=self.num_frames_out):
-                video_features[i] = video[:self.num_frames_out,:]
-            else:
-                video_features[i,:m,:] = video
-                video_features[i,m:,:].fill(0)
-            obj.close_instance()
+            frame_list = self.frame_dic[files[i]]
+            init = frame_list[0]
+            num_frames = frame_list[1]
+            vid_frames = frame_list[2]
+            video_features[i] = self.extract_video_features(file = files[i] , init = init, num_frames = num_frames, vid_frames = vid_frames, frame_limit = 200)
         
         ###################################################
         last = 0
-        for i in range(len(captions_in_each_video)):
-            num_caps = captions_in_each_video[i]
+        for i in range(len(self.captions_in_each_video)):
+            num_caps = self.captions_in_each_video[i]
             for j in range(last,last+num_caps):
                 new_features[j] = video_features[i]
             last = last+num_caps       
         ###################################################
         
-        #new_features = np.reshape(new_features, (len(self.captions)*self.num_frames_out, 1, self.num_features))
-        #new_features = self.transform_inputs(video_features)
-        #new_features = np.reshape(new_features, (test_captions*self.num_frames_out, 1, self.num_features))
-        #ncoded_tensor = np.repeat(encoded_tensor, self.num_frames_out, axis=0)
         embedded_input = self.embedding_layer(encoded_tensor)
         print("embedded_input : ", embedded_input.shape)
         print("video_features : ", new_features.shape)
         model  = self.build_model(new_features, embedded_input)
         model = self.load_model(model,1)
-        print(embedded_input.shape,new_features.shape,label_tensor.shape)
-        #output = model.evaluate(x = [embedded_input, new_features], y = label_tensor, batch_size=10, verbose = 1)
         output2 = model.predict(x = [embedded_input, new_features], batch_size=10, verbose = 1)
-        #print(output.shape,output2.shape)
-        '''
-        new_features, embedded_input, label_tensor = self.data_preprocessing(np.arange(1500,2000));
-        model  = self.build_model(new_features, embedded_input)
-        model = self.load_model(model,1)
-        #output = model.evaluate(x = [embedded_input, new_features], y = label_tensor, batch_size=10, verbose = 1)
-        output = model.predict(x = [embedded_input, new_features], batch_size=10, verbose = 0)
-        return output
-        '''
         return output2
 ##############################################################################################################################################        
