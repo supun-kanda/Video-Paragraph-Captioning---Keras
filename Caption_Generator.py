@@ -11,8 +11,9 @@ import csv
 
 from keras.layers.embeddings import Embedding
 from keras.models import Sequential
-from keras.layers import Dense, Activation, Input, GRU, Dropout
+from keras.layers import Dense, Activation, Input, GRU, Dropout, LSTM
 from keras.optimizers import RMSprop
+from keras.optimizers import Adam
 from keras.layers.wrappers import TimeDistributed
 from keras.preprocessing import sequence
 from keras.models import Model
@@ -48,7 +49,7 @@ class Caption_Generator(Utilities):
         self.additional_save_path = "Data" # new data like processed features will be saved here
         self.vid_ids = vid_ids #video ids in caption dataset dictionary. Given as a list
         self.training_labels = training_labels #training json file
-        self.size = 200
+        self.size = 2000
         self.train_epochs = train_epochs
         
         #######################################
@@ -115,6 +116,7 @@ class Caption_Generator(Utilities):
                     self.id2word[index] = word
                     index += 1
         self.vocabulary_size = len(self.word2id)
+        print("Vocabulary Size %d"%(self.vocabulary_size)) 
         print("Done creating vocabulary")
         #save_dic = {'dic':self.id2word, 'max_len':self.max_sentence_length, 'voca':self.vocabulary_size}
         #with open(self.dic_file, 'wb') as f:
@@ -166,6 +168,9 @@ class Caption_Generator(Utilities):
         self.embedding_weights[0] = output_weights
         self.embedding_weights[1] = np.ones((self.vocabulary_size,))
         print("Done embedding inputs....")
+        #for i in range(output_array.shape[0]):
+        #    if(i%200):
+        #        print("max: ",np.max(output_array[i]),"min: ",np.min(output_array[i]), "embed")
         return output_array
     
 ################################################################################################
@@ -206,7 +211,8 @@ class Caption_Generator(Utilities):
         input2 = Input(shape=(video_features.shape[1], video_features.shape[2]), dtype='float32')
         model = Sequential()
         
-        layer1 = GRU(512, return_sequences = True, input_shape = (embedded_input.shape[1],embedded_input.shape[2]), activation = 'relu')(input1)
+        #layer1 = GRU(512, return_sequences = True, input_shape = (embedded_input.shape[1],embedded_input.shape[2]), activation = 'relu')(input1)
+        layer1 = LSTM(512, return_sequences = True, input_shape = (embedded_input.shape[1],embedded_input.shape[2]), activation = 'relu')(input1)
         
         attention_layer = Attention_Layer(output_dim = 32)([layer1, input2])
 
@@ -226,6 +232,7 @@ class Caption_Generator(Utilities):
         # RMSprop is commonly used for RNNs instead of regular SGD.
         # categorical_crossentropy is the same loss used for classification problems using softmax. (nn.ClassNLLCriterion)
         '''
+        #model.compile(loss = 'categorical_crossentropy', optimizer = RMSprop(lr=0.001), metrics=['accuracy'])
         model.compile(loss = 'categorical_crossentropy', optimizer = RMSprop(lr=0.001), metrics=['accuracy'])
 
         model.summary() # Convenient function to see details about the network model.
@@ -240,7 +247,8 @@ class Caption_Generator(Utilities):
         filepath="Data/model_results/word-weights-improvement-{epoch:02d}-{loss:.4f}.hdf5"
         checkpoint = ModelCheckpoint(filepath, monitor='loss', verbose=1, save_best_only=True, mode='min')
         callbacks_list = [checkpoint]
-        hist = model.fit(x = [embedded_input,video_features], y = label_tensor, validation_split = 0.3, batch_size = 50, epochs= self.train_epochs, callbacks = callbacks_list)
+        hist = model.fit(x = [embedded_input,video_features], y = label_tensor, batch_size = 20, epochs= self.train_epochs, callbacks = callbacks_list)
+        model.trainable = False
         with open("Data/histfile.pkl", 'wb') as f:
             pickle.dump(hist.history, f)
         self.save_model(model,1)
@@ -268,12 +276,12 @@ class Caption_Generator(Utilities):
     ################################################################################################    
     #def test(self, model, epoch):
 ##############################################################################################################################################
-    def test(self):   
+    def test(self, model):   
         test_captions = []
         files = []
         self.captions_in_each_video = []
         
-        for i in range(1500,2000):
+        for i in range(2600,3000):
             try:
                 files.append(self.vid_ids[i])
                 for j in range(len(self.training_labels[self.vid_ids[i]]['sentences'])):
@@ -310,8 +318,102 @@ class Caption_Generator(Utilities):
         embedded_input = self.embedding_layer(encoded_tensor)
         print("embedded_input : ", embedded_input.shape)
         print("video_features : ", new_features.shape)
-        model  = self.build_model(new_features, embedded_input)
-        model = self.load_model(model,1)
-        output2 = model.predict(x = [embedded_input, new_features], batch_size=10, verbose = 1)
-        return output2
+        #model = self.load_model(model,1)
+        #model  = self.build_model(new_features, embedded_input)
+        #model = self.load_model(model,1)
+        output = model.predict(x = [embedded_input, new_features])
+        
+        
+        ms, sents, words = output.shape
+        
+        for i in range(20):
+            string = "%d:\n\t"%i
+            for j in range(output[i].shape[0]):
+                try:
+                    idWord = np.argmax(output[i,j,:])
+                    word = self.id2word[idWord]
+                    string += "%s "%word
+                    if(word == "<e>"):
+                        break
+                except KeyError:
+                    string += "xxx \n\n"
+            print(string)
+        
+        return output
 ##############################################################################################################################################        
+    def combine(self):
+        print('Start Training...')
+        video_features, embedded_input, label_tensor = self.data_preprocessing(np.arange(self.size));
+        model = self.build_model(video_features, embedded_input)
+        filepath="Data/model_results/word-weights-improvement-{epoch:02d}-{loss:.4f}.hdf5"
+        checkpoint = ModelCheckpoint(filepath, monitor='loss', verbose=1, save_best_only=True, mode='min')
+        callbacks_list = [checkpoint]
+        hist = model.fit(x = [embedded_input,video_features], y = label_tensor, batch_size = 20, epochs= self.train_epochs, callbacks = callbacks_list)
+        model.trainable = False
+        with open("Data/histfile.pkl", 'wb') as f:
+            pickle.dump(hist.history, f)
+        self.save_model(model,1)
+        print('Done Training...')
+        test_captions = []
+        files = []
+        self.captions_in_each_video = []
+        
+        for i in range(2600,3000):
+            try:
+                files.append(self.vid_ids[i])
+                for j in range(len(self.training_labels[self.vid_ids[i]]['sentences'])):
+                    test_captions.append(self.training_labels[self.vid_ids[i]]['sentences'][j].lower().split(' '))
+                self.captions_in_each_video.append(j)
+            except KeyError:
+                print("\tError Caption: %s"%self.vid_ids[i])
+        
+        #reading video features
+        encoded_tensor = np.zeros((len(test_captions), self.max_sentence_length, self.vocabulary_size), dtype=np.float16)
+        encoded_tensor[:,0,0] = 1
+                
+        print("number of files : ",len(files))
+        video_features = np.zeros((len(files),self.num_frames_out,self.num_features))
+        new_features = np.zeros((len(test_captions),self.num_frames_out,self.num_features))
+        
+        
+        for i in range(len(files)):
+            frame_list = self.frame_dic[files[i]]
+            init = frame_list[0]
+            num_frames = frame_list[1]
+            vid_frames = frame_list[2]
+            video_features[i] = self.extract_video_features(file = files[i] , init = init, num_frames = num_frames, vid_frames = vid_frames, frame_limit = 200)
+        
+        ###################################################
+        last = 0
+        for i in range(len(self.captions_in_each_video)):
+            num_caps = self.captions_in_each_video[i]
+            for j in range(last,last+num_caps):
+                new_features[j] = video_features[i]
+            last = last+num_caps       
+        ###################################################
+        
+        embedded_input = self.embedding_layer(encoded_tensor)
+        print("embedded_input : ", embedded_input.shape)
+        print("video_features : ", new_features.shape)
+        #model = self.load_model(model,1)
+        #model  = self.build_model(new_features, embedded_input)
+        #model = self.load_model(model,1)
+        output = model.predict(x = [embedded_input, new_features], verbose = 1)
+        
+        
+        ms, sents, words = output.shape
+        
+        for i in range(20):
+            string = "%d:\n\t"%i
+            for j in range(output[i].shape[0]):
+                try:
+                    idWord = np.argmax(output[i,j,:])
+                    word = self.id2word[idWord]
+                    string += "%s "%word
+                    if(word == "<e>"):
+                        break
+                except KeyError:
+                    string += "xxx \n\n"
+            print(string)
+        
+        return output

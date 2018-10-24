@@ -56,5 +56,8 @@ class Utilities:
             video_features[:m,:] = video
             video_features[m:,:].fill(0)
         
+        mx = np.max(video_features)
+        mn = np.min(video_features)
+        video_features = (video_features-mn)/(mx-mn)
         return video_features
  
